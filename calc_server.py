@@ -8,6 +8,8 @@ import ast
 import math
 import operator
 import calendar
+import re
+import os
 from datetime import datetime, timedelta, date
 from mcp.server.fastmcp import FastMCP
 
@@ -103,7 +105,6 @@ def calculate(expression: str) -> str:
         expression: 수학 수식. 예: "1250 * 1.35", "sqrt(144)", "round(3.14159, 2)", "2**10"
     """
     try:
-        import re
         # 숫자 내 천 단위 쉼표만 제거 (1,250,000 → 1250000), 함수 인자 쉼표는 유지
         expr = re.sub(r'(\d),(\d{3})', r'\1\2', expression)
         expr = re.sub(r'(\d),(\d{3})', r'\1\2', expr)  # 반복 (백만 이상)
@@ -817,6 +818,111 @@ def growth_calc(
         )
 
     return "오류: target_value, daily_rate, days 중 하나를 0으로 두면 나머지로 계산합니다."
+
+
+# =========================================
+# 12. 글자 수 카운터
+# =========================================
+
+def _extract_body(text: str) -> str:
+    """에피소드 마크다운에서 본문만 추출 (메타데이터, 삽화, 마크다운 기호 제거)"""
+    # EPISODE_META 블록 제거 (### EPISODE_META 또는 EPISODE_META부터 끝까지)
+    meta_match = re.search(r'\n###?\s*EPISODE_META', text)
+    if meta_match:
+        text = text[:meta_match.start()]
+
+    lines = text.split('\n')
+    body_lines = []
+    skip_next = False
+
+    for line in lines:
+        stripped = line.strip()
+
+        if skip_next:
+            skip_next = False
+            continue
+
+        # 삽화 blockquote (> **삽화**: ... 와 다음 줄 > ![...)
+        if stripped.startswith('> **삽화**'):
+            skip_next = True
+            continue
+        if stripped.startswith('> !['):
+            continue
+
+        # 마크다운 헤더 (#으로 시작)
+        if stripped.startswith('#'):
+            continue
+
+        # 장면 구분자 (*** 만 있는 줄)
+        if stripped in ('***', '---', '* * *'):
+            continue
+
+        # 시점 전환 마커
+        if stripped.startswith('[시점 전환'):
+            continue
+
+        # &nbsp; 공백 줄
+        if stripped == '&nbsp;':
+            continue
+
+        body_lines.append(line)
+
+    return '\n'.join(body_lines)
+
+
+@mcp.tool()
+def char_count(
+    file_path: str,
+    target_min: int = 0,
+    target_max: int = 0,
+) -> str:
+    """에피소드 파일의 글자 수를 정확하게 셉니다. 본문에서 EPISODE_META, 삽화, 마크다운 기호를 제거하고 순수 본문 글자 수를 반환합니다.
+
+    Args:
+        file_path: 에피소드 파일 절대 경로. 예: "/root/novel/no-title-001/chapters/arc-01/chapter-07.md"
+        target_min: 목표 최소 글자 수 (0이면 판정 생략)
+        target_max: 목표 최대 글자 수 (0이면 판정 생략)
+    """
+    if not os.path.isfile(file_path):
+        return f"오류: 파일을 찾을 수 없습니다: {file_path}"
+
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            raw_text = f.read()
+    except Exception as e:
+        return f"오류: 파일 읽기 실패: {e}"
+
+    filename = os.path.basename(file_path)
+    raw_len = len(raw_text)
+
+    body = _extract_body(raw_text)
+    body_with_spaces = len(body.strip())
+    body_no_spaces = len(body.replace(' ', '').replace('\n', '').replace('\r', '').replace('\t', ''))
+
+    lines = [
+        f"글자 수 분석: {filename}",
+        f"",
+        f"전체 파일: {raw_len:,}자",
+        f"본문 (공백 포함): {body_with_spaces:,}자",
+        f"본문 (공백 제외): {body_no_spaces:,}자",
+    ]
+
+    if target_min > 0 or target_max > 0:
+        lines.append("")
+        count = body_with_spaces
+        if target_min > 0 and count < target_min:
+            diff = target_min - count
+            lines.append(f"목표 미달: {count:,}자 (최소 {target_min:,}자 대비 -{diff:,}자)")
+        elif target_max > 0 and count > target_max:
+            diff = count - target_max
+            lines.append(f"목표 초과: {count:,}자 (최대 {target_max:,}자 대비 +{diff:,}자)")
+        else:
+            range_str = ""
+            if target_min > 0 and target_max > 0:
+                range_str = f" ({target_min:,}~{target_max:,}자)"
+            lines.append(f"목표 범위 내{range_str}")
+
+    return "\n".join(lines)
 
 
 # =========================================
