@@ -109,6 +109,9 @@ def calculate(expression: str) -> str:
         expr = re.sub(r'(\d),(\d{3})', r'\1\2', expr)  # 반복 (백만 이상)
         tree = ast.parse(expr, mode="eval")
         result = safe_eval(tree)
+        # inf/NaN 체크
+        if isinstance(result, float) and (math.isinf(result) or math.isnan(result)):
+            return f"계산 오류: 결과가 무한대 또는 NaN입니다. ({expression})"
         if isinstance(result, float) and result == int(result) and abs(result) < 1e15:
             result = int(result)
         return f"{expression} = {result}"
@@ -312,6 +315,9 @@ def speed_distance_time(
     speed_unit = "km/h" if unit == "kmh" else "m/s"
     dist_unit = "km" if unit == "kmh" else "m"
     time_unit = "시간" if unit == "kmh" else "초"
+
+    if speed < 0 or distance < 0 or time < 0:
+        return "오류: 음수 값은 허용되지 않습니다."
 
     given = sum(1 for v in [speed, distance, time] if v > 0)
     if given != 2:
@@ -640,6 +646,11 @@ def supply_calc(
         supply_unit: 보급량 단위 (홉/되/말/섬)
         days: 목표 일수 (0이면 보유량 기반으로 버틸 일수 계산)
     """
+    if people <= 0:
+        return "오류: 인원수는 1 이상이어야 합니다."
+    if consumption_per_day <= 0:
+        return "오류: 1인 1일 소비량은 0보다 커야 합니다."
+
     # 모든 값을 홉으로 변환
     cons_per_day_hop = consumption_per_day * VOLUME_UNITS.get(consumption_unit, 1)
     daily_total_hop = people * cons_per_day_hop
@@ -764,6 +775,9 @@ def growth_calc(
         days: 기간 (일, 0이면 계산)
     """
     import math
+
+    if start_value <= 0:
+        return "오류: 시작 값은 0보다 커야 합니다."
 
     # target_value 계산
     if target_value == 0 and daily_rate > 0 and days > 0:
